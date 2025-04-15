@@ -6,6 +6,7 @@ import { SearchClient, AzureKeyCredential } from "@azure/search-documents";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
+import pdf from "pdf-parse";
 
 dotenv.config();
 
@@ -18,6 +19,15 @@ const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME!;
 const searchServiceName = process.env.AZURE_SEARCH_SERVICE_NAME!;
 const searchServiceKey = process.env.AZURE_SEARCH_SERVICE_KEY!;
 const searchIndexName = "turnberry-documents";
+
+console.log({
+  storageAccountName,
+  storageAccountKey,
+  containerName,
+  searchServiceName,
+  searchServiceKey,
+  searchIndexName,
+});
 
 // Initialize Azure Storage client
 const sharedKeyCredential = new StorageSharedKeyCredential(
@@ -54,7 +64,14 @@ async function indexDocument(filePath: string) {
     const blobName = await uploadToBlob(filePath);
 
     // Read file content
-    const content = fs.readFileSync(filePath, "utf-8");
+    let content: string;
+    if (path.extname(filePath).toLowerCase() === ".pdf") {
+      const dataBuffer = fs.readFileSync(filePath);
+      const pdfData = await pdf(dataBuffer);
+      content = pdfData.text;
+    } else {
+      content = fs.readFileSync(filePath, "utf-8");
+    }
 
     // Create a valid ID by replacing invalid characters
     const validId = blobName.replace(/[^a-zA-Z0-9_\-=]/g, "_");
