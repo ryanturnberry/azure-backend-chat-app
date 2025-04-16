@@ -6,7 +6,8 @@
   "scripts": {
     "start": "ts-node index.ts",
     "build": "tsc",
-    "index": "ts-node cli.ts"
+    "index": "ts-node cli.ts",
+    "clear-index": "ts-node clear-index.ts"
   },
   "devDependencies": {
     "@types/node": "^20.11.16",

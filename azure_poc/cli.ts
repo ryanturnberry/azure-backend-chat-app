@@ -64,31 +64,52 @@ async function indexDocument(filePath: string) {
     const blobName = await uploadToBlob(filePath);
 
     // Read file content
-    let content: string;
     if (path.extname(filePath).toLowerCase() === ".pdf") {
       const dataBuffer = fs.readFileSync(filePath);
       const pdfData = await pdf(dataBuffer);
-      content = pdfData.text;
+
+      // Split PDF into pages and process each page
+      const pages = pdfData.text.split(/\f/); // Form feed character typically separates PDF pages
+
+      for (let i = 0; i < pages.length; i++) {
+        const pageContent = pages[i].trim();
+        if (pageContent) {
+          // Skip empty pages
+          const validId = `${blobName}_page_${i + 1}`.replace(
+            /[^a-zA-Z0-9_\-=]/g,
+            "_"
+          );
+
+          const document = {
+            id: validId,
+            content: pageContent,
+            title: path.basename(filePath, path.extname(filePath)),
+            section: "benefits_guide",
+            page_number: i + 1,
+            last_modified: new Date().toISOString(),
+          };
+
+          await searchClient.mergeOrUploadDocuments([document]);
+          console.log(`Indexed page ${i + 1} of document: ${blobName}`);
+        }
+      }
     } else {
-      content = fs.readFileSync(filePath, "utf-8");
+      // Handle non-PDF files as before
+      const content = fs.readFileSync(filePath, "utf-8");
+      const validId = blobName.replace(/[^a-zA-Z0-9_\-=]/g, "_");
+
+      const document = {
+        id: validId,
+        content: content,
+        title: path.basename(filePath, path.extname(filePath)),
+        section: "default",
+        page_number: 1,
+        last_modified: new Date().toISOString(),
+      };
+
+      await searchClient.mergeOrUploadDocuments([document]);
+      console.log(`Indexed document: ${blobName}`);
     }
-
-    // Create a valid ID by replacing invalid characters
-    const validId = blobName.replace(/[^a-zA-Z0-9_\-=]/g, "_");
-
-    // Create document matching your index schema
-    const document = {
-      id: validId,
-      content: content,
-      title: path.basename(filePath, path.extname(filePath)), // filename without extension
-      section: "default", // you might want to make this configurable
-      page_number: 1, // you might want to make this configurable
-      last_modified: new Date().toISOString(),
-    };
-
-    // Index the document
-    await searchClient.mergeOrUploadDocuments([document]);
-    console.log(`Indexed document: ${blobName}`);
   } catch (error) {
     console.error("Error processing document:", error);
     throw error;
