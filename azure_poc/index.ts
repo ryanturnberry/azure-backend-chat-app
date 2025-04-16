@@ -53,18 +53,59 @@ function getClient(): AzureOpenAI {
   });
 }
 
+interface SearchResult {
+  document: {
+    content: string;
+    title: string;
+    page_number: number;
+  };
+  highlights?: {
+    content: string[];
+  };
+}
+
 // Add function to search documents
 async function searchDocuments(query: string) {
   const searchResults = await searchClient.search(query, {
-    select: ["content", "title"],
+    select: ["content", "title", "page_number"],
     top: 3,
+    highlightFields: "content",
+    filter: "section eq 'benefits_guide'",
   });
 
   let context = "";
   for await (const result of searchResults.results) {
-    // @ts-ignore
-    context += `${result.document.title}:\n${result.document.content}\n\n`;
+    const doc = result.document as SearchResult["document"];
+    const highlights = result.highlights as SearchResult["highlights"];
+
+    // Extract only the most relevant passage from each result
+    let content: string;
+    if (highlights?.content && highlights.content.length > 0) {
+      // If highlights are available, use those instead of full content
+      const highlightedContent = highlights.content.join("... ");
+      content = highlightedContent;
+    } else {
+      // Otherwise, take a snippet around keyword matches
+      const snippetLength = 500;
+      const keywordIndex = doc.content
+        .toLowerCase()
+        .indexOf(query.toLowerCase());
+      if (keywordIndex !== -1) {
+        const start = Math.max(0, keywordIndex - snippetLength / 2);
+        const end = Math.min(
+          doc.content.length,
+          keywordIndex + snippetLength / 2
+        );
+        content = doc.content.slice(start, end) + "...";
+      } else {
+        // If no direct match, take first portion
+        content = doc.content.slice(0, snippetLength) + "...";
+      }
+    }
+
+    context += `[Page ${doc.page_number}] ${doc.title}:\n${content}\n\n`;
   }
+
   return context;
 }
 
@@ -74,29 +115,36 @@ async function createMessages(
 ): Promise<ChatCompletionCreateParamsNonStreaming> {
   const context = await searchDocuments(userQuery);
 
-  // Keep only the last few messages (e.g., last 5 exchanges)
-  const recentMessages = messages.slice(-10); // Adjust number as needed
+  // Keep minimal conversation history
+  const recentMessages = messages.slice(-3);
 
   return {
     messages: [
-      // Always include the initial system message
       messages[0],
       ...recentMessages,
       {
         role: "system",
-        content: `Use the following context to answer the user's question:\n\n${context}`,
+        content: `You are helping with questions about the benefits guide. Use the following relevant excerpts to answer the question. Include page numbers in your response when referencing specific information:\n\n${context}`,
+      },
+      {
+        role: "user",
+        content: userQuery,
       },
     ],
     model: process.env.AZURE_OPENAI_MODEL || "gpt-3.5-turbo",
     temperature: 0.7,
-    max_tokens: 1500,
+    max_tokens: 1000,
   };
 }
 
 async function printChoices(completion: ChatCompletion): Promise<void> {
   for (const choice of completion.choices) {
     messages.push(choice.message);
-    console.log("\nAssistant:", choice.message.content);
+    console.log(
+      "\nAssistant:",
+      "\x1b[33m" + choice.message.content + "\x1b[0m",
+      "\n"
+    );
   }
 }
 
