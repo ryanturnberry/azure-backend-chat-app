@@ -35,11 +35,13 @@ resource "azurerm_storage_container" "container" {
 
 # Azure OpenAI Service
 resource "azurerm_cognitive_account" "openai" {
-  name                = var.openai_account_name
-  location           = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  kind               = "OpenAI"
-  sku_name           = "S0"
+  name                          = var.openai_account_name
+  location                      = azurerm_resource_group.rg.location
+  resource_group_name          = azurerm_resource_group.rg.name
+  kind                         = "OpenAI"
+  sku_name                     = "S0"
+  custom_subdomain_name        = var.openai_account_name
+  public_network_access_enabled = true
 
   identity {
     type = "SystemAssigned"
@@ -48,7 +50,7 @@ resource "azurerm_cognitive_account" "openai" {
 
 # Azure OpenAI Deployment
 resource "azurerm_cognitive_deployment" "gpt" {
-  name                 = "gpt-35-turbo"
+  name                 = "gpt-3.5-turbo"
   cognitive_account_id = azurerm_cognitive_account.openai.id
   model {
     format  = "OpenAI"
@@ -86,5 +88,12 @@ resource "azurerm_role_assignment" "search_blob_contributor" {
 resource "azurerm_role_assignment" "openai_search_contributor" {
   scope                = azurerm_search_service.search.id
   role_definition_name = "Search Service Contributor"
+  principal_id         = azurerm_cognitive_account.openai.identity[0].principal_id
+}
+
+# Add this role assignment for the OpenAI service
+resource "azurerm_role_assignment" "openai_role" {
+  scope                = azurerm_cognitive_account.openai.id
+  role_definition_name = "Cognitive Services OpenAI User"  # or "Cognitive Services OpenAI Contributor" for more permissions
   principal_id         = azurerm_cognitive_account.openai.identity[0].principal_id
 } 
